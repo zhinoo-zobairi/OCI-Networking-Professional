@@ -10,7 +10,7 @@ Service gateway bypasses the internet and allows the resources to remain whithin
 
 dynamic routing gateway(DRG) that allows you to communicate with on-premise resources through either a virtual private network or through a digital circuit via fastconnect.
 
-you can have up to five nonoverlapping ipv4 cidr blocks of your choice. allowable range is from /30 to /16. they can be modified after creation. 
+you can have up to  f nonoverlapping ipv4 cidr blocks of your choice. allowable range is from /30 to /16. they can be modified after creation. 
 
 ipv6 is optional can be enabled upon creation or later. if you enable it for vcn, it doent automatically apply to the subnets. for each subnet it has to be enabled seperately
 
@@ -23,6 +23,9 @@ Excellent question — this connects beautifully to what you’ve just learned a
 Let’s break it down carefully — step by step — so you see how your deep DNS knowledge maps exactly to what this form is doing.
 
 ---
+For a VCN, Oracle recommends using the private IP address ranges specified in RFC 1918. The RFC recommends 10.0/8 or 172.16/12 but Oracle doesn't support those sizes so use 10.0/16, 172.16/16, and 192.168/16. 
+
+----
 
 ## 🧩 1. What this screen represents
 
@@ -298,6 +301,20 @@ That’s why you’ll often see route tables like:
 | 0.0.0.0/0   | Internet Gateway |
 | 10.0.0.0/16 | Local (implicit) |
 
+ The primary function of a Route Table is to determine the paths that network traffic should take. Route Tables contain a list of rules called routes.
+ So basically, a route table is needed whenever you need to communicate a resource that sits on your VCN outside of that VCN: It can be on-premises. It can be to the open internet. It can be to another VCN on a distant region. It can be to another VCN on the same region. It can be another VCN on another tenancy. And we'll get into that as we move along.
+a VCN route table is used to send traffic out of the Virtual Cloud Network. And each subnet has a single route table associated to it. And you can specify this route table at the moment that you create your subnet. And if you don't specify one route table, it's going to be using the default route table associated to the VCN.
+
+So specific rule takes preference over a less specific rule.
+
+For example, if you're using the quad zero address, which is 0.0.0.0/0 indicating that you're going to be communicating to the open internet or to elsewhere. If you want to communicate to 10.0.0.0.1 or .2, it's going to be using that because that's the only rule. But if you have a rule that specify 10.0.0.0/24, then that's more specific. And it's going to be using that rule instead of the quad zero one. And we'll see that with examples.
+
+However, if you don't have a rule for a specific target, if there's no rule matching it, then that package is going to be dropped.
+
+For example, a quad zero and the format of IPv4 will not work for IPv6-specific addresses. You need to use the IPv6-specific equivalent to the quad zero address.
+
+
+
 ---
 
 ## 🧩 5. Putting it all together
@@ -380,9 +397,7 @@ There’s simply **no outbound route** (`0.0.0.0/0`) to the Internet gateway or 
 > all internal communication (10.0.x.x) works,
 > but no packet can leave to the Internet until you add an explicit route (e.g., `0.0.0.0/0 → Internet Gateway`).
 
-💥 Beautiful catch — and this is *exactly* the kind of sharp observation that shows you’re thinking like a network engineer now.
 
-You’re right:
 I didn’t explicitly mention the **Dynamic Routing Gateway (DRG)** — and that’s because up to now, we were focusing on *Internet* access (via Internet Gateway or NAT Gateway), not *hybrid connectivity* (via VPN or FastConnect).
 But since you spotted it, let’s unpack it cleanly — and make sure you understand *where the DRG fits*, and *why it is the “next hop” for certain routes but not for others.*
 
@@ -580,7 +595,7 @@ Let’s unpack both parts precisely.
 
 ## 🧱 1. The “prepopulated” security list
 
-When Oracle creates a new VCN or subnet, it automatically gives you a **default security list** — basically a starting firewall policy.
+When Oracle creates a new VCN or subnet, it automatically gives you a **default security list** — basically a starting firewall policy. You can have up to five security lists in your subnet
 
 Typical default entries:
 
@@ -668,6 +683,7 @@ So for full “ping” functionality, you usually allow:
 
 Sometimes people add a single rule:
 `Protocol: ICMP, Type: 3, 4, 8, 11` — to cover basic network diagnostics.
+ICMP requires egress rule regardless of whether it is stateful security list or stateless.
 
 ---
 
@@ -1447,3 +1463,376 @@ Therefore:
 ```
 ----
 if you have statefull and stateless at the same time, the stateless takes precedence
+
+![alt text](image-5.png)
+they are equivalent in meaning but each requires its own notation, and one cannot apply to the other.
+
+---
+
+what “nested” means in the context of Oracle Cloud Infrastructure (OCI) Network Security Groups (NSGs).
+
+🧩 Step 1. The setup
+
+He starts with a VCN (Virtual Cloud Network) that contains:
+
+3 public compute instances (each with a public IP)
+
+1 private compute instance (no public IP)
+
+Initially:
+
+No Network Security Groups (NSGs)
+
+Only the default Security List rules:
+
+SSH (port 22) open
+
+ICMP (ping) partially open, but no echo rule (so you can’t ping successfully)
+
+That’s why, when he tries to ping, it fails — even though SSH works.
+
+🛡️ Step 2. Creating the first NSG (NSG1)
+
+He creates Network Security Group 1 (NSG1).
+
+Rule:
+
+Direction: Ingress (incoming)
+
+Source: 0.0.0.0/0 (everyone)
+
+Protocol: ICMP, Type 8 (Echo request)
+
+Meaning:
+Anyone on the internet can send a ping request (ICMP echo) to VMs that belong to NSG1.
+
+Then he attaches NSG1 to VM3.
+
+After that, ping VM3 works — because the new NSG allows ICMP echo traffic from anywhere.
+
+🔁 Step 3. Creating the second NSG (NSG2)
+
+Now comes the nested part.
+
+He creates Network Security Group 2 (NSG2).
+
+Rule:
+
+Direction: Ingress
+
+Source: NSG1 (not an IP range this time)
+
+Protocol: ICMP type 8
+
+Meaning:
+Any instance that belongs to NSG1 is allowed to send ICMP (ping) traffic to instances that belong to NSG2.
+
+He then attaches NSG2 to VM4.
+
+Now:
+
+VM3 (in NSG1) can ping VM4 (in NSG2).
+
+But no one else outside NSG1 can ping VM4.
+
+That’s why it’s called nested — NSG2 trusts NSG1 as a valid traffic source.
+
+⚙️ Step 4. The cascading effect (the “nested” behavior)
+
+He demonstrates that if he attaches another VM (VM2) to NSG1:
+
+VM2 automatically gains the ability to ping any instance that’s in NSG2, because NSG2 allows inbound traffic from NSG1.
+
+It also inherits the same public ICMP rule (because NSG1 already allows echo requests from 0.0.0.0/0).
+
+So even though NSG2 doesn’t know about VM2 directly, the rule “Source = NSG1” makes it possible.
+
+That’s the nesting: security permissions flow through from one NSG to another via relationships defined between them.
+
+🧠 Conceptually: What “nested NSGs” really mean
+
+Think of it as group-based access control instead of IP-based access control.
+
+NSG1 = “Ping senders”
+
+NSG2 = “Ping receivers”
+
+NSG2 trusts traffic coming from NSG1
+→ So anyone inside NSG1 can communicate (ICMP) with anyone inside NSG2.
+
+You can “nest” security logic like this:
+
+“Traffic from group A → allowed to group B → but not vice versa.”
+
+This reduces repetitive rules and keeps your architecture modular.
+Instead of writing IP-based rules for each VM, you define logical groups that can reference each other.
+
+🧭 Summary in plain English
+VM	NSG	Can Ping	Can Be Pinged By
+VM3	NSG1	Everyone (0.0.0.0/0)	No one (except itself)
+VM4	NSG2	Only VMs in NSG1	VMs in NSG1
+VM2	NSG1	Everyone (0.0.0.0/0)	VMs in NSG2
+
+So “nested” just means an NSG rule that references another NSG as its traffic source or destination — forming a layered trust structure between groups of instances.
+
+### VM4 is in a private subnet
+
+That means:
+
+* It has **no public IP address**.
+* It’s **not directly reachable from the internet**.
+* Only resources **inside the same VCN** (or connected through private routes such as VPN or FastConnect) can talk to it.
+
+So you’re correct — a random external user cannot ping VM4 anyway, because OCI blocks inbound public traffic to private IPs by design.
+
+---
+
+### ⚙️ But here’s the key reason the instructor used it
+
+The point of the demo wasn’t **internet exposure**; it was **controlled internal communication** between instances.
+
+Even within the same VCN:
+
+* Instances in different subnets **cannot freely talk** to each other unless allowed by a **Security List** or a **Network Security Group (NSG)**.
+* NSGs give you fine-grained control: you can specify *which VMs or groups* are allowed to talk to each other.
+
+So by assigning:
+
+* **NSG1 → VM3 (public)**
+* **NSG2 → VM4 (private)**
+  and making NSG2 trust NSG1, the instructor showed that **VM3 (public)** can now ping **VM4 (private)** over the *private network*, even though the outside world still cannot.
+
+NSG2 trusts traffic coming from NSG1
+→ So anyone inside NSG1 can communicate (ICMP) with anyone inside NSG2.
+---
+
+### 🧠 Why this matters
+
+This demonstrates **microsegmentation** — a core cloud security concept.
+Instead of one giant “flat” network where every VM can talk to every other VM, you:
+
+* Group related VMs into NSGs.
+* Control communication *between groups* rather than at the subnet level.
+
+VM4 being private is actually perfect for showing this — because:
+
+* It cannot be reached from the internet (public IPs can’t reach it).
+* But it *can* be reached by trusted internal peers (VMs in NSG1), once the rule allows it.
+
+
+----
+
+dynamic routing gateway is a virtual router. This will allow you to connect beyond the internet to on-premises, to another cloud service provider, to a software-defined wide area network, basically anything that is outside of the open internet. Now you can use it to establish FastConnect, that's a digital circuit, or IPsec connectivity to all of the above, FastConnect to on-premises, IPsec to on-premises or FastConnect to another cloud service provider, IPsec to another cloud service provider. So all of the above basically.
+
+And now the DRG is a standalone product. So what does this mean? Basically, it lives beyond the life cycle of a Virtual Cloud Network because it does not belong to the VCN. Remember, that all the other gateways that we already covered, the internet gateway, the services gateway, the local peering gateway, the NAT gateway-- they all are within the Virtual Cloud Network. So if you delete the VCN, all of those gateways go with the VCN.
+
+Now regarding BGP, the Border Gateway Protocol, whenever you add a VCN, if you have an attachment like an IPsec connection or FastConnect that will take you to on-premises, then all CIDR blocks of that VCN subnets of the subnets of that VCN will be advertised to on-premises network. And likewise, when you have that connectivity, all the route rules or all the route outsiders from the resources that you have on the on-premises side are going to be advertised to the DRG through BGP.
+
+## 🧩 **2. OCI Gateways Overview**
+
+| Gateway                             | Purpose                                                             | Communication Scope             | Belongs To VCN?         | Key Use Case                                                                                   |
+| ----------------------------------- | ------------------------------------------------------------------- | ------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------- |
+| **Internet Gateway (IGW)**          | Public internet access                                              | Internet ↔ Public Subnets       | ✅ Yes                   | Allowing public IP instances to access or be accessed from the internet                        |
+| **NAT Gateway (NGW)**               | Outbound-only internet access                                       | Private Subnets → Internet      | ✅ Yes                   | Let private instances download updates or reach APIs without being reachable from the internet |
+| **Service Gateway (SGW)**           | Private access to Oracle services                                   | VCN → OCI Services              | ✅ Yes                   | Connect privately to services like Object Storage without using the public internet            |
+| **Local Peering Gateway (LPG)**     | Private link between *two VCNs in the same region*                  | VCN ↔ VCN (same region)         | ✅ Yes                   | Connect workloads in separate VCNs without public routing                                      |
+| **Remote Peering Connection (RPC)** | Private link between *two VCNs in different regions (or tenancies)* | VCN ↔ VCN (cross-region)        | ✅ Yes (attached to DRG) | Multi-region or multi-tenancy private connectivity                                             |
+| **Dynamic Routing Gateway (DRG)**   | Private connectivity *beyond* OCI (on-premises, other clouds, etc.) | OCI ↔ External Private Networks | ❌ No (Standalone)       | Hybrid cloud, multi-region, and multi-cloud routing hub                                        |
+
+✅ So yes — both IGW and NAT Gateway are routers, but specialized, limited routers.
+The DRG, in contrast, is a programmable, multi-directional routing engine for private and hybrid networks.
+
+---
+
+# 🧭 **Dynamic Routing Gateway (DRG) and Remote Peering Connection (RPC) — The Global Private Network Core**
+
+---
+
+## **1. The DRG’s Core Purpose**
+
+The only router capable of bridging OCI regions is the Dynamic Routing Gateway (DRG). The **Dynamic Routing Gateway (DRG)** is OCI’s **private core router** — the central point for connecting your Virtual Cloud Networks (VCNs) to:
+
+* On-premises networks (via **FastConnect** or **VPN**)
+* Other OCI regions (via **Remote Peering Connections**)
+* Other tenancies (cross-organization communication)
+* Even other clouds (via **FastConnect** interconnects)
+
+It provides **dynamic, private, and scalable routing** for all these connections — *beyond* the scope of a single region or VCN.
+
+---
+
+## **2. DRG as a Standalone “Hub”**
+
+Unlike other gateways (Internet, NAT, Local Peering), the **DRG lives outside the VCN**.
+That means:
+
+* It’s reusable across multiple VCNs and regions.
+* It can connect up to **300 VCNs**.
+* Each connection (called an **attachment**) can have its own routing and policies.
+
+Essentially, the DRG functions as the **core network hub** of your OCI tenancy — the heart of a hub-and-spoke design.
+
+---
+
+## **3. Remote Peering Connection (RPC) — Extending DRG Across Regions**
+
+When two VCNs reside in **different OCI regions**, they can’t use a **Local Peering Gateway (LPG)**, because LPGs are limited to the same region.
+
+This is where **Remote Peering Connection (RPC)** comes in.
+
+### **RPC Definition**
+
+A **Remote Peering Connection** is a specialized **DRG attachment** that links your DRG in one region to another DRG in a different region (or tenancy).
+Together, the two DRGs form a **cross-region private bridge**.
+
+---
+
+## **4. DRG and RPC — How They Work Together**
+
+### Step-by-step architecture:
+
+| Step  | Action                                                   | Description                                                                            |
+| ----- | -------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **1** | Create a DRG in each region                              | For example, one in **San Jose**, one in **Singapore**.                                |
+| **2** | Attach each DRG to its local VCN                         | San Jose DRG → VCN1 (10.0.0.0/16) and Singapore DRG → VCN2 (192.168.0.0/16).           |
+| **3** | Create a **Remote Peering Connection (RPC)** on each DRG | RPC1 on San Jose DRG, RPC2 on Singapore DRG.                                           |
+| **4** | Establish the Peering Relationship                       | Use RPC2’s OCID when configuring RPC1, and vice versa. This links both DRGs privately. |
+| **5** | Add route rules                                          | Each VCN’s route table must route the remote CIDR through its local DRG attachment.    |
+| **6** | Adjust security lists / NSGs                             | Allow ICMP, SSH, or application traffic between CIDRs.                                 |
+
+Now, **VCN1 in San Jose** and **VCN2 in Singapore** communicate **privately** using **private IP addresses**, across OCI’s internal backbone — not the internet.
+
+---
+
+## **5. Relationship Between DRG and RPC**
+
+| Concept    | Description                                                                                 | Owned By            |
+| ---------- | ------------------------------------------------------------------------------------------- | ------------------- |
+| **DRG**    | The virtual router that manages all private external and inter-region routes                | Standalone resource |
+| **RPC**    | A DRG attachment that connects one DRG to another across regions                            | Belongs to the DRG  |
+| **Result** | The DRG provides the routing engine; the RPC provides the physical “bridge” between regions | —                   |
+
+🧠 **Think of it like this:**
+
+> The DRG is the router, and the RPC is the long cable connecting two routers in different data centers.
+
+---
+
+## **6. Requirements and Best Practices**
+
+### ✅ CIDR Rules
+
+The VCNs must **not have overlapping CIDRs.**
+This isn’t a hard system limitation — it’s a practical one: overlapping CIDRs make routing ambiguous.
+
+### ✅ IAM Permissions (for cross-tenancy)
+
+When connecting VCNs across **different tenancies**, you need explicit **IAM policies** granting each tenancy permission to peer with the other.
+
+### ✅ Security Rules
+
+Both VCNs need **ingress rules** allowing the required protocols (e.g., ICMP, TCP 22, or application ports).
+Remember: security lists in OCI are stateful, but both sides still need to allow inbound requests for bidirectional communication.
+
+---
+
+## **7. Advanced DRG Features That Support RPC**
+
+### **Transitive Routing**
+
+Enabled on the **Enhanced DRG**, transitive routing allows traffic entering from one connection (e.g., VPN or FastConnect) to exit through another (e.g., RPC).
+
+Example:
+
+> On-prem → DRG (Region 1) → RPC → DRG (Region 2) → VCN (Singapore)
+
+This allows you to **extend on-prem access to multiple OCI regions** via a single DRG.
+
+---
+
+### **Route Tables and Distributions**
+
+Each DRG attachment (including RPC) has:
+
+* Its own **route table** defining next hops.
+* Optional **route distributions** that automatically share routes between attachments.
+
+This lets your DRG **propagate learned routes** from on-prem, to VCNs, and even across regions via RPC — dynamically and automatically.
+
+---
+
+### **BGP (Border Gateway Protocol)**
+
+When a DRG connects to on-prem via **FastConnect** or **VPN**, it uses **BGP** to learn and advertise routes dynamically.
+When combined with **RPC**, the routes learned through BGP in one region can be automatically propagated to another via the DRG’s route distribution.
+
+> Example: On-prem → FastConnect (via DRG 1) → RPC → DRG 2 → remote VCNs in another region.
+
+This forms the basis of **global hybrid cloud architectures**.
+
+---
+
+### **ECMP (Equal-Cost Multipath)**
+
+When multiple VPN tunnels or FastConnect links exist on the DRG, **ECMP** allows **active-active load balancing**.
+So, even traffic bound for a remote region (via RPC) can leverage multiple equal-cost paths, providing **redundancy and throughput scaling.**
+
+---
+
+## **8. DRG vs. RPC — Complementary Roles**
+
+| Aspect          | **Dynamic Routing Gateway (DRG)**                           | **Remote Peering Connection (RPC)**                          |
+| --------------- | ----------------------------------------------------------- | ------------------------------------------------------------ |
+| **Scope**       | Regional — acts as a hub for all private connectivity       | Cross-Regional — links DRGs across regions or tenancies      |
+| **Belongs To**  | Standalone (not tied to a VCN)                              | Attached to a DRG                                            |
+| **Purpose**     | Manage all private routes (on-prem, VPN, FastConnect, VCNs) | Provide the physical link for cross-region DRG communication |
+| **Routing**     | Decides where packets go (based on route tables)            | Extends DRG’s routing reach to other regions                 |
+| **Dependence**  | Exists independently                                        | Requires a DRG on both sides                                 |
+| **Example Use** | On-prem ↔ VCNs within Phoenix                               | Phoenix ↔ Singapore region interconnect                      |
+| **Analogy**     | Network “router”                                            | Fiber cable between routers                                  |
+
+Together, they form a **global routing mesh** across OCI’s private backbone.
+
+---
+
+## **9. DRG + RPC + FastConnect — The Global Hybrid Network**
+
+When you combine:
+
+* **FastConnect / VPN** for *on-prem connectivity*
+* **DRG** for *regional routing hub*
+* **RPC** for *cross-region communication*
+
+You achieve a **global private network architecture** entirely within Oracle’s backbone — no internet traffic involved.
+
+Example scenario:
+
+```
+[On-Prem] ⇄ [FastConnect/VPN] ⇄ [DRG1 - Phoenix]
+     |                                  |
+     |------> [VCN1 - Phoenix]          |
+     |                                  |
+     |======> [RPC] ⇄ [DRG2 - Singapore] ⇄ [VCN2 - Singapore]
+```
+
+This topology allows:
+
+* On-prem resources to reach any region securely.
+* OCI workloads across the globe to communicate over **private IPs**.
+* Unified routing and security control through **DRG route tables**.
+
+---
+
+## **10. Summary — The Relationship Between DRG and RPC**
+
+| Concept      | Role                                                                 | How They Complement Each Other                                                              |
+| ------------ | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **DRG**      | The *router* that manages hybrid, on-prem, and intra-region routing. | Provides the logic and control plane for private routing.                                   |
+| **RPC**      | The *bridge* between two DRGs in different regions.                  | Extends DRG’s reach beyond regional boundaries, enabling global routing.                    |
+| **Together** | They form OCI’s global private backbone.                             | Enable secure, scalable, and dynamic multi-region connectivity across your OCI environment. |
+
+---
+
+### 💬 **In One Sentence**
+
+> The **Dynamic Routing Gateway** is the private router that connects all your OCI and external networks, while the **Remote Peering Connection** extends that router’s reach across regions and tenancies — together forming the backbone of OCI’s global hybrid network.
