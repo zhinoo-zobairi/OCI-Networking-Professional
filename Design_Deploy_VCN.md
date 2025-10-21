@@ -732,8 +732,6 @@ That’s why:
 > Even though the Internet only “sees” your `/48` (or `/24` in IPv4),  
 > OCI internally manages smaller chunks for local routing.
 
----
-
 ## 🌍 4️⃣ Why the Minimum and Maximum Ranges Exist
 
 | Concept | Min | Max | Explanation |
@@ -743,8 +741,6 @@ That’s why:
 | **VCN prefix (IPv6)** | `/56` | Fixed by Oracle | Each VCN gets one /56; subnets must be /64 |
 | **Subnet prefix (IPv6)** | `/64` | Fixed by spec | Required for SLAAC and ICMPv6 neighbor discovery |
 | **Instance address** | `/128` | Single | Unique address assigned to one interface |
-
----
 
 ## 🧮 5️⃣ Connecting the “Numbers” to Real Routing Behavior
 
@@ -759,8 +755,6 @@ Let’s overlay both your **conceptual math** and **Internet reality**:
 
 Everything *below /48* is invisible to the global Internet — it exists only *inside* OCI,  
 just like everything below your home router’s prefix is invisible to your ISP.
-
----
 
 ## 🧩 6️⃣ Unified Analogy — Home vs Cloud vs Internet
 
@@ -993,8 +987,6 @@ It helps you:
 - Identify **overlapping or conflicting CIDRs**.  
 - Search and trace any IP or resource across the region.
 
----
-
 ## 🧠 2️⃣ Core Capabilities
 
 ### 🔹 **Subnet & VCN Utilization**
@@ -1020,8 +1012,6 @@ It helps you:
   - Associated VNICs and hostnames  
 - Allows you to drill from region → VCN → subnet → resource hierarchy.
 
----
-
 ## 📈 3️⃣ **Practical Use Cases**
 | Scenario | Why It Matters |
 |-----------|----------------|
@@ -1031,8 +1021,6 @@ It helps you:
 | Finding “lost” IPs or VMs | Rapid forensic search by IP or name |
 | Compliance tracking | Document current IP utilization for audits |
 
----
-
 ## 🧭 4️⃣ Example Workflow
 1. Navigate to **Networking → IP Management → IP Address Insights**.  
 2. Review overall **CIDR utilization** at the VCN and subnet level.  
@@ -1040,15 +1028,12 @@ It helps you:
 4. Create an **alarm** if usage exceeds 70% of available addresses.  
 5. Use the **Search** field to locate any IP or network resource globally.  
 6. Check the **Overlaps** tab for potential CIDR conflicts.
-
----
-
 ## ✅ 5️⃣ Summary Insight
 > **IP Address Insights** transforms OCI networking from “configure and hope”  
 > into “observe and optimize.”  
 > It provides real-time transparency into address allocation, overlaps, and usage efficiency across all your IPv4 and IPv6 networks.
 
-----
+
 ![alt text](image-17.png)
 
 
